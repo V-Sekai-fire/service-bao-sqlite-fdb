@@ -2,7 +2,7 @@
 # Populate thirdparty/store/ with symlinks to fabric-store's C sources.
 #
 # This is a local-dev fallback. The real mechanism is a linkfile in the
-# goal manifest's default.xml — see the README's "Manifest wiring" section.
+# goal manifest's default.xml.
 # When repo sync populates thirdparty/store/ automatically, this script
 # becomes unnecessary; until then, run it after checkout.
 #
