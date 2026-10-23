@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -29,22 +30,36 @@ const (
 	envCluster = "BAO_SQLITE_FDB_CLUSTER"
 	envDSN     = "BAO_SQLITE_FDB_DSN"
 	envDir     = "BAO_SQLITE_FDB_DIR"
+
+	// Caps on every named database (RFD 2333, RFD 2316). Unset takes the default;
+	// 0 turns a cap off.
+	envMaxPages    = "BAO_SQLITE_FDB_MAX_PAGES"
+	envExecsPerMin = "BAO_SQLITE_FDB_EXECS_PER_MINUTE"
+
+	defaultMaxPages    = 2560 // 10 MiB at SQLite's 4 KiB page
+	defaultExecsPerMin = 600
 )
 
 type backend struct {
 	*framework.Backend
 
-	logger  log.Logger
-	catalog *Catalog
-	store   Store // the default database behind query/<name>; nil when none is configured
-	fabric  bool
-	dir     string
+	logger   log.Logger
+	catalog  *Catalog
+	store    Store // the default database behind query/<name>; nil when none is configured
+	fabric   bool
+	dir      string
+	maxPages int
+	execs    *execLimiter
+	// unbound plants the defect the isolation test's control needs: databases
+	// named by path alone, as before RFD 2333. Only tests set it.
+	unbound bool
 	mu      sync.Mutex
 	stores  map[string]Store
 }
 
 type storeConfig struct {
 	cluster, db, dsn, dir string
+	maxPages, execsPerMin int
 }
 
 // Factory wires the OpenBao logical.Backend.
@@ -78,11 +93,13 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 	}
 
 	b := &backend{
-		logger:  conf.Logger,
-		catalog: catalog,
-		fabric:  cfg.cluster != "",
-		dir:     cfg.dir,
-		stores:  map[string]Store{},
+		logger:   conf.Logger,
+		catalog:  catalog,
+		fabric:   cfg.cluster != "",
+		dir:      cfg.dir,
+		maxPages: cfg.maxPages,
+		execs:    newExecLimiter(cfg.execsPerMin),
+		stores:   map[string]Store{},
 	}
 	if b.fabric {
 		if err := StartFabricStore(cfg.cluster); err != nil {
@@ -112,6 +129,13 @@ func configFromEnv() (storeConfig, error) {
 		db:      os.Getenv(envDB),
 		dsn:     os.Getenv(envDSN),
 		dir:     os.Getenv(envDir),
+	}
+	var err error
+	if c.maxPages, err = intEnv(envMaxPages, defaultMaxPages); err != nil {
+		return c, err
+	}
+	if c.execsPerMin, err = intEnv(envExecsPerMin, defaultExecsPerMin); err != nil {
+		return c, err
 	}
 	fabric := c.cluster != ""
 	plain := c.dsn != "" || c.dir != ""
@@ -147,9 +171,23 @@ func (b *backend) openDefault(cfg storeConfig) error {
 	return nil
 }
 
-// named opens a database on first use and applies the catalog's schema for it.
-// In fabric mode the open takes the database's fence.
-func (b *backend) named(ctx context.Context, name string) (Store, error) {
+// intEnv reads a non-negative integer from the environment, or def when unset.
+func intEnv(name string, def int) (int, error) {
+	v := os.Getenv(name)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%s=%q is not a non-negative integer", name, v)
+	}
+	return n, nil
+}
+
+// named opens a database on first use and applies the catalog's schema for its
+// logical name. name is the physical name, which carries the owner. In fabric
+// mode the open takes the database's fence.
+func (b *backend) named(ctx context.Context, name, logicalName string) (Store, error) {
 	if !dbNamePattern.MatchString(name) {
 		return nil, fmt.Errorf("database name %q is not [A-Za-z0-9_-]", name)
 	}
@@ -162,16 +200,16 @@ func (b *backend) named(ctx context.Context, name string) (Store, error) {
 	var err error
 	switch {
 	case b.fabric:
-		s, err = OpenFabricStore(name)
+		s, err = openFabricCapped(name, b.maxPages)
 	case b.dir != "":
-		s, err = OpenStore(filepath.Join(b.dir, name+".sqlite"))
+		s, err = openPlainCapped(filepath.Join(b.dir, name+".sqlite"), b.maxPages)
 	default:
 		return nil, fmt.Errorf("named databases need %s in plain mode", envDir)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if err := s.Apply(ctx, b.catalog.SchemaFor(name)); err != nil {
+	if err := s.Apply(ctx, b.catalog.SchemaFor(logicalName)); err != nil {
 		_ = s.Close()
 		return nil, fmt.Errorf("schema: %w", err)
 	}

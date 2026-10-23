@@ -88,7 +88,11 @@ func (b *backend) handleNamedQueryRead(ctx context.Context, req *logical.Request
 	if _, isExec := b.catalog.LookupExec(name); isExec {
 		return logical.ErrorResponse("%q is an exec; it does not run through query", name), nil
 	}
-	store, err := b.named(ctx, db)
+	owned, err := b.resolveDB(req, db)
+	if err != nil {
+		return resolveResponse(err)
+	}
+	store, err := b.ownedStore(ctx, owned)
 	if err != nil {
 		return logical.ErrorResponse("open %q: %v", db, err), nil
 	}
@@ -125,7 +129,14 @@ func (b *backend) handleExec(ctx context.Context, req *logical.Request, data *fr
 		}
 		return logical.ErrorResponse("exec %q not registered", name), nil
 	}
-	store, err := b.named(ctx, db)
+	owned, err := b.resolveDB(req, db)
+	if err != nil {
+		return resolveResponse(err)
+	}
+	if !b.execs.allow(owned.owner) {
+		return logical.ErrorResponse("exec rate cap reached for this owner; retry later"), logical.ErrRateLimitQuotaExceeded
+	}
+	store, err := b.ownedStore(ctx, owned)
 	if err != nil {
 		return logical.ErrorResponse("open %q: %v", db, err), nil
 	}
