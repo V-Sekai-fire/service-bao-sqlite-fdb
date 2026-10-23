@@ -62,6 +62,7 @@ query "sessions" {
 	b, err := Factory(context.Background(), &logical.BackendConfig{
 		Logger:      log.NewNullLogger(),
 		StorageView: storage,
+		System:      testSystem,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,6 +77,7 @@ func request(t *testing.T, b logical.Backend, storage *logical.InmemStorage, op 
 		Path:      path,
 		Data:      data,
 		Storage:   storage,
+		EntityID:  entityA,
 	})
 	if err != nil {
 		t.Fatalf("%s %s: %v", op, path, err)
@@ -122,7 +124,7 @@ func TestNamed_ExecThenQuery(t *testing.T) {
 	if len(rows) != 1 || rows[0]["session_id"] != "s1" {
 		t.Fatalf("sessions %v", rows)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "acp_s1.sqlite")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "e-"+entityA+"--acp_s1.sqlite")); err != nil {
 		t.Fatalf("named database file: %v", err)
 	}
 }

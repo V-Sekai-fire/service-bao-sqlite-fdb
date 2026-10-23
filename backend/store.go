@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 )
@@ -33,6 +34,48 @@ func init() {
 			return nil
 		},
 	})
+}
+
+var cappedDrivers sync.Map // driver name -> registered
+
+// cappedDriver registers, once per cap value, a driver whose every connection
+// sets PRAGMA max_page_count, so a reconnect cannot drop the cap. SQLite then
+// refuses a write that would grow the database past maxPages with SQLITE_FULL,
+// whatever the VFS. Fabric drivers also apply fabric-store's pragmas.
+func cappedDriver(fabric bool, maxPages int) string {
+	base := driverPlain
+	pragmas := []string{}
+	if fabric {
+		base = driverFabric
+		pragmas = append(pragmas, pragmaJournal, pragmaLocking)
+	}
+	if maxPages <= 0 {
+		return base
+	}
+	pragmas = append(pragmas, fmt.Sprintf("PRAGMA max_page_count=%d", maxPages))
+	name := fmt.Sprintf("%s_cap_%d", base, maxPages)
+	if _, loaded := cappedDrivers.LoadOrStore(name, true); !loaded {
+		sql.Register(name, &sqlite3.SQLiteDriver{
+			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+				for _, p := range pragmas {
+					if _, err := conn.Exec(p, nil); err != nil {
+						return fmt.Errorf("apply %q: %w", p, err)
+					}
+				}
+				return nil
+			},
+		})
+	}
+	return name
+}
+
+func openPlainCapped(dsn string, maxPages int) (Store, error) {
+	return openWith(cappedDriver(false, maxPages), dsn)
+}
+
+func openFabricCapped(dbName string, maxPages int) (Store, error) {
+	dsn := fmt.Sprintf("file:%s?vfs=%s", dbName, FabricStoreVFS)
+	return openWith(cappedDriver(true, maxPages), dsn)
 }
 
 type Store interface {
