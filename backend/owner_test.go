@@ -233,7 +233,7 @@ func storedEntries(t *testing.T, s *logical.InmemStorage) int {
 	return len(ks)
 }
 
-// Growth gate (RFD 2316): many requests leave Bao's storage as it was. The
+// Growth gate (RFD66606-2316): many requests leave Bao's storage as it was. The
 // control stores one entry and must be seen, so the gate can fail.
 func TestGrowth_RequestsLeaveBaoStorageUnchanged(t *testing.T) {
 	b, s := setupOwnerBackend(t, "", "0")
