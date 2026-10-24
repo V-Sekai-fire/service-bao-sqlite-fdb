@@ -31,7 +31,7 @@ const (
 	envDSN     = "BAO_SQLITE_FDB_DSN"
 	envDir     = "BAO_SQLITE_FDB_DIR"
 
-	// Caps on every named database (RFD 2333, RFD 2316). Unset takes the default;
+	// Caps on every named database (RFD66606-2333, RFD66606-2316). Unset takes the default;
 	// 0 turns a cap off.
 	envMaxPages    = "BAO_SQLITE_FDB_MAX_PAGES"
 	envExecsPerMin = "BAO_SQLITE_FDB_EXECS_PER_MINUTE"
@@ -51,7 +51,7 @@ type backend struct {
 	maxPages int
 	execs    *execLimiter
 	// unbound plants the defect the isolation test's control needs: databases
-	// named by path alone, as before RFD 2333. Only tests set it.
+	// named by path alone, as before RFD66606-2333. Only tests set it.
 	unbound bool
 	mu      sync.Mutex
 	stores  map[string]Store
