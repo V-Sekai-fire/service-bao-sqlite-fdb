@@ -20,7 +20,7 @@ if [[ ! -d "${store}" ]]; then
 fi
 
 mkdir -p "${here}/thirdparty/store"
-for f in fdb_vfs.c fdb_keys.h; do
+for f in fdb_vfs.c fdb_keys.h weft_fdb_vfs.h; do
 	if [[ ! -f "${store}/${f}" ]]; then
 		echo "missing source: ${store}/${f}" >&2
 		exit 1

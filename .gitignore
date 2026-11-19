@@ -7,3 +7,4 @@
 # locally). Owned by 6-datasource/store, not tracked here.
 /thirdparty/store/fdb_vfs.c
 /thirdparty/store/fdb_keys.h
+/thirdparty/store/weft_fdb_vfs.h
