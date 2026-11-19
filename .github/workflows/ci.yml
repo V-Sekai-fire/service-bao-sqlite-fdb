@@ -27,7 +27,7 @@ jobs:
       - name: Checkout datasource-store
         uses: actions/checkout@v4
         with:
-          repository: weftspun/datasource-store
+          repository: V-Sekai-fire/datasource-store
           path: store
 
       - name: Populate thirdparty/store
@@ -35,6 +35,7 @@ jobs:
           mkdir -p plugin/thirdparty/store
           ln -sfn "$PWD/store/fdb_vfs.c" plugin/thirdparty/store/fdb_vfs.c
           ln -sfn "$PWD/store/fdb_keys.h" plugin/thirdparty/store/fdb_keys.h
+          ln -sfn "$PWD/store/weft_fdb_vfs.h" plugin/thirdparty/store/weft_fdb_vfs.h
           ls -la plugin/thirdparty/store/
 
       - name: Install libsqlite3 and pkg-config
